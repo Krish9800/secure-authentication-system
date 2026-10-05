@@ -76,9 +76,7 @@ class AuditService:
             details=clean_details,
         )
 
-    def get_user_events(
-        self, user_id: int, limit: int = 50
-    ) -> list[SecurityAuditEvent]:
+    def get_user_events(self, user_id: int, limit: int = 50) -> list[SecurityAuditEvent]:
         """Fetch audit trail for a specific user."""
         return self.audit_repo.list_events(limit=limit, user_id=user_id)
 

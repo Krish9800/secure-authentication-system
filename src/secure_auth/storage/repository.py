@@ -64,9 +64,7 @@ class UserRepository:
         self.session.refresh(merged)
         return merged
 
-    def increment_failed_attempts(
-        self, user: User, locked_until: datetime | None = None
-    ) -> User:
+    def increment_failed_attempts(self, user: User, locked_until: datetime | None = None) -> User:
         """Increment failed login attempts counter and optionally set lockout."""
         merged = self.session.merge(user)
         merged.failed_login_attempts += 1
@@ -166,9 +164,7 @@ class RecoveryCodeRepository:
 
     def store_codes(self, user_id: int, code_hashes: list[str]) -> list[BackupRecoveryCode]:
         """Invalidate old recovery codes and store new batch."""
-        statement = select(BackupRecoveryCode).where(
-            col(BackupRecoveryCode.user_id) == user_id
-        )
+        statement = select(BackupRecoveryCode).where(col(BackupRecoveryCode.user_id) == user_id)
         existing = self.session.exec(statement).all()
         for item in existing:
             self.session.delete(item)
@@ -238,9 +234,7 @@ class AuditRepository:
         self.session.refresh(event)
         return event
 
-    def list_events(
-        self, limit: int = 100, user_id: int | None = None
-    ) -> list[SecurityAuditEvent]:
+    def list_events(self, limit: int = 100, user_id: int | None = None) -> list[SecurityAuditEvent]:
         """Fetch audit log events ordered by timestamp descending."""
         statement = select(SecurityAuditEvent)
         if user_id is not None:
