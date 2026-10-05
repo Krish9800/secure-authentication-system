@@ -1,5 +1,16 @@
 """Cryptographic core package exports."""
 
+from secure_auth.core.exceptions import (
+    AccountInactiveError,
+    AccountLockedError,
+    AuthError,
+    InvalidCredentialsError,
+    InvalidMFACodeError,
+    InvalidTokenError,
+    MFARequiredError,
+    SessionExpiredError,
+    UserAlreadyExistsError,
+)
 from secure_auth.core.hasher import Argon2PasswordHasher, password_hasher
 from secure_auth.core.mfa import (
     generate_backup_recovery_codes,
@@ -28,4 +39,13 @@ __all__ = [
     "verify_totp_code",
     "generate_backup_recovery_codes",
     "verify_recovery_code",
+    "AuthError",
+    "InvalidCredentialsError",
+    "AccountLockedError",
+    "AccountInactiveError",
+    "UserAlreadyExistsError",
+    "InvalidTokenError",
+    "SessionExpiredError",
+    "MFARequiredError",
+    "InvalidMFACodeError",
 ]

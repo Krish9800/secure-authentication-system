@@ -72,20 +72,21 @@ class Argon2PasswordHasher:
             logger.warning("Attempted verification against invalid hash format")
             return False
 
-    def verify_dummy(self, password: str) -> bool:
+    def verify_dummy(self, password: str | None = None) -> bool:
         """Execute a full synthetic Argon2id verification cycle for missing users.
 
         Guarantees that an authentication attempt for a non-existent account
         incurs the exact same memory and CPU work factor as a valid account.
 
         Args:
-            password: User-provided password attempt.
+            password: User-provided password attempt or default baseline.
 
         Returns:
             Always returns False.
         """
+        candidate = password or "synthetic_timing_baseline"
         try:
-            self._hasher.verify(self._dummy_hash, password)
+            self._hasher.verify(self._dummy_hash, candidate)
         except exceptions.VerificationError:
             pass  # Expected dummy verification failure
         except exceptions.InvalidHashError:
