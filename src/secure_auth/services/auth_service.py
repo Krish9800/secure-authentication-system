@@ -166,6 +166,7 @@ class AuthService:
                     status="WARNING",
                     details={"penalty_seconds": penalty_seconds},
                 )
+                self.db_session.commit()
                 raise AccountLockedError(penalty_seconds)
 
             self.audit_service.log(
@@ -176,6 +177,7 @@ class AuthService:
                 status="FAILURE",
                 details={"reason": "bad_password"},
             )
+            self.db_session.commit()
             raise InvalidCredentialsError()
 
         # Password verified! Handle rehash if parameters upgraded

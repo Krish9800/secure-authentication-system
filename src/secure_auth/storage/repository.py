@@ -59,33 +59,33 @@ class UserRepository:
     def update(self, user: User) -> User:
         """Save updates to an existing user."""
         user.updated_at = datetime.now(UTC)
-        self.session.add(user)
+        merged = self.session.merge(user)
         self.session.flush()
-        self.session.refresh(user)
-        return user
+        self.session.refresh(merged)
+        return merged
 
     def increment_failed_attempts(
         self, user: User, locked_until: datetime | None = None
     ) -> User:
         """Increment failed login attempts counter and optionally set lockout."""
-        user.failed_login_attempts += 1
+        merged = self.session.merge(user)
+        merged.failed_login_attempts += 1
         if locked_until is not None:
-            user.locked_until = locked_until
-        user.updated_at = datetime.now(UTC)
-        self.session.add(user)
+            merged.locked_until = locked_until
+        merged.updated_at = datetime.now(UTC)
         self.session.flush()
-        self.session.refresh(user)
-        return user
+        self.session.refresh(merged)
+        return merged
 
     def reset_failed_attempts(self, user: User) -> User:
         """Clear failed login attempts counter and any active lockout."""
-        user.failed_login_attempts = 0
-        user.locked_until = None
-        user.updated_at = datetime.now(UTC)
-        self.session.add(user)
+        merged = self.session.merge(user)
+        merged.failed_login_attempts = 0
+        merged.locked_until = None
+        merged.updated_at = datetime.now(UTC)
         self.session.flush()
-        self.session.refresh(user)
-        return user
+        self.session.refresh(merged)
+        return merged
 
 
 class SessionRepository:
