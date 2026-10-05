@@ -21,16 +21,26 @@ class SecuritySettings(BaseSettings):
 
     # Cryptographic Parameters: Argon2id (RFC 9106 / OWASP recommendations)
     ARGON2_TIME_COST: int = Field(default=3, ge=1, description="Number of passes")
-    ARGON2_MEMORY_COST: int = Field(default=65536, ge=1024, description="Memory size in KiB (64 MB)")
+    ARGON2_MEMORY_COST: int = Field(
+        default=65536, ge=1024, description="Memory size in KiB (64 MB)"
+    )
     ARGON2_PARALLELISM: int = Field(default=4, ge=1, description="Number of parallel threads")
     ARGON2_HASH_LEN: int = Field(default=32, ge=16, description="Output hash length in bytes")
-    ARGON2_SALT_LEN: int = Field(default=16, ge=16, description="Cryptographic salt length in bytes")
+    ARGON2_SALT_LEN: int = Field(
+        default=16, ge=16, description="Cryptographic salt length in bytes"
+    )
 
     # Brute-Force & Lockout Controls
     MAX_FAILED_LOGIN_ATTEMPTS: int = Field(default=5, ge=1, description="Failures before lockout")
-    LOCKOUT_BASE_DURATION_SECONDS: int = Field(default=300, ge=30, description="Base lockout duration")
-    MAX_LOCKOUT_DURATION_SECONDS: int = Field(default=86400, description="Max progressive lockout (24h)")
-    FAILED_ATTEMPTS_RESET_WINDOW_SECONDS: int = Field(default=900, description="Reset counter after 15m")
+    LOCKOUT_BASE_DURATION_SECONDS: int = Field(
+        default=300, ge=30, description="Base lockout duration"
+    )
+    MAX_LOCKOUT_DURATION_SECONDS: int = Field(
+        default=86400, description="Max progressive lockout (24h)"
+    )
+    FAILED_ATTEMPTS_RESET_WINDOW_SECONDS: int = Field(
+        default=900, description="Reset counter after 15m"
+    )
 
     # Session Management
     SESSION_LIFETIME_HOURS: int = Field(default=24, ge=1, description="Sliding session duration")
