@@ -1,248 +1,215 @@
-# Secure Authentication Service
+# Secure Authentication Service (`secure-auth`)
 
-[![CI](https://github.com/Krish9800/secure-authentication-service/actions/workflows/ci.yml/badge.svg)](https://github.com/Krish9800/secure-authentication-service/actions)
-[![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/)
-[![Security: Bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
-[![Type Checked: mypy](https://img.shields.io/badge/type_checker-mypy_strict-blue.svg)](https://mypy-lang.org/)
-[![Code Style: Ruff](https://img.shields.io/badge/code_style-ruff-black.svg)](https://astral.sh/ruff)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+Production-Hardened Defense-in-Depth Authentication Microservice, Argon2id Password Hashing, Timing Side-Channel Immunity, TOTP Multi-Factor Authentication (RFC 6238), Progressive Account Lockout, and Immutable Audit Trails.
 
-> **Educational Defensive Security Project (Cybersecurity Portfolio — Project 02)**  
-> A production-grade, defense-in-depth authentication microservice demonstrating modern password hashing (Argon2id), timing side-channel mitigation, TOTP Multi-Factor Authentication (RFC 6238), progressive account lockouts, and structured security audit logging.
+[![CI Pipeline](https://github.com/Krish9800/secure-authentication-service/actions/workflows/ci.yml/badge.svg)](https://github.com/Krish9800/secure-authentication-service/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python: 3.12](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/)
+[![Password Hashing: Argon2id](https://img.shields.io/badge/Hashing-Argon2id%20RFC%209106-green.svg)](https://datatracker.ietf.org/doc/html/rfc9106)
+[![MFA: TOTP RFC 6238](https://img.shields.io/badge/MFA-TOTP%20RFC%206238-blueviolet.svg)](https://datatracker.ietf.org/doc/html/rfc6238)
 
 ---
 
-## 🔒 Security Posture & Architecture Guarantees
+## Overview & Problem Statement
 
-> [!IMPORTANT]
-> **Core Cryptographic & Architectural Controls:**
-> - **Argon2id (RFC 9106):** State-of-the-art password hashing with configurable memory-hardness ($64\text{MB}$), time cost ($t=3$), and parallelism ($p=4$) preventing GPU/ASIC brute-force economies.
-> - **Timing Invariance:** Neutralizes user enumeration and timing side-channels via constant-time digest equality and synthetic dummy Argon2id hash calculations for missing users.
-> - **Multi-Factor Authentication (MFA):** RFC 6238 compliant Time-Based One-Time Passwords (TOTP) with clock-drift tolerance ($\pm 30\text{s}$) and single-use emergency backup recovery codes.
-> - **Progressive Account Lockouts:** Per-account progressive delays with exponential backoff mitigating automated credential stuffing without enabling permanent denial-of-service.
-> - **Session Security:** 256-bit CSPRNG session tokens stored strictly as SHA-256 hashes at rest to prevent token exposure in database read breaches.
-> - **Rate Limiting & Security Headers:** IP token-bucket rate limiting (15 auth attempts/min) and strict defense-in-depth HTTP headers (`no-store`, `nosniff`, `DENY`).
-> - **Structured Audit Telemetry:** Tamper-evident immutable security events with automatic sanitization of sensitive cryptographic secrets.
+Authentication vulnerabilities remain a primary cause of high-profile data breaches. Common implementation flaws include outdated password hashing algorithms (MD5, SHA-1, un-salted SHA-256), username enumeration via observable response timing differences, lack of multi-factor authentication, and brittle lockout policies that allow automated credential stuffing or trigger denial-of-service against legitimate users.
+
+**Secure Authentication Service (`secure-auth`)** is an educational, production-hardened defensive authentication microservice. Built using FastAPI and SQLModel/SQLite, it demonstrates how to engineer an enterprise identity service that neutralizes timing side-channel attacks, enforces memory-hard password hashing via Argon2id (RFC 9106), implements Time-Based One-Time Passwords (TOTP RFC 6238) with emergency single-use backup codes, applies progressive exponential account lockouts, and records immutable security audit logs.
 
 ---
 
-## Architecture & Authentication Sequence
+## Architecture & Data Flow
 
 ```mermaid
-sequenceDiagram
-    autonumber
-    actor Client as User / Client App
-    participant GW as Security Middleware
-    participant API as FastAPI Router
-    participant Service as AuthService
-    participant Crypto as Argon2 / TOTP
-    participant DB as SQLite / SQLModel
-
-    Client->>GW: POST /api/v1/auth/login
-    GW->>GW: Enforce Rate Limit & Headers
-    GW->>API: Route Request
-    API->>Service: authenticate(identifier, password)
-    Service->>DB: Query User by username/email
-    alt User Found & Active
-        Service->>Crypto: verify_password(hash, password)
-    else User Not Found / Inactive
-        Service->>Crypto: verify_dummy() [Timing Defense]
+flowchart TD
+    subgraph Client Authentication Request
+        Client[Client: Login / Register / MFA Challenge] --> RateLimiter[Token-Bucket Rate Limiter: 15 req/min]
+        RateLimiter --> Gateway[FastAPI Security Router]
     end
-    alt Password Invalid
-        Service->>DB: Record Failure & Increment Counter
-        Service-->>Client: 401 Unauthorized (or 423 Locked)
-    else Password Valid (MFA Required)
-        Service->>DB: Issue temporary 5-min step-up token
-        Service-->>Client: 200 OK {"status": "mfa_required", "token": "..."}
-        Client->>API: POST /api/v1/auth/mfa/verify {"code": "123456"}
-        API->>Service: complete_mfa_login(token, code)
-        Service->>Crypto: verify_totp_code()
-        Service->>DB: Promote session (mfa_authenticated=True)
-        Service-->>Client: 200 OK {"status": "authenticated", "token": "..."}
-    else Password Valid (No MFA)
-        Service->>DB: Reset Failure Counter & Create Session
-        Service-->>Client: 200 OK {"status": "authenticated", "token": "..."}
+
+    subgraph Defense-in-Depth Security Engine
+        Gateway --> UserLookup{User Exists in DB?}
+
+        UserLookup -->|User Found| CalcArgon2[Compute Argon2id Hash of Input Password]
+        UserLookup -->|User Missing| DummyArgon2[Compute Synthetic Dummy Argon2id Hash]
+
+        CalcArgon2 --> ConstTimeComp[Constant-Time Digest Comparison: secrets.compare_digest]
+        DummyArgon2 --> ConstTimeComp
+
+        ConstTimeComp -->|Hash Matches & User Valid| LockCheck{Account Locked?}
+        ConstTimeComp -->|Hash Mismatch / Missing User| RecordFail[Increment Failed Counter & Progressive Delay]
+
+        LockCheck -->|Locked| RejectLock[Reject: 423 Locked with Retry-After]
+        LockCheck -->|Unlocked & MFA Active| ReqMFA[Require TOTP Challenge: RFC 6238]
+        LockCheck -->|Unlocked & No MFA| IssueToken[Issue 256-Bit CSPRNG Session Token]
+
+        ReqMFA --> TOTPVerify{Validate TOTP / Single-Use Backup Code}
+        TOTPVerify -->|Valid| IssueToken
+        TOTPVerify -->|Invalid| RecordFail
+    end
+
+    subgraph Persistence & Audit Trail
+        IssueToken --> SessionStore[(SQLite WAL Database: Token Hashes at Rest)]
+        RecordFail --> AuditLogger[Immutable Security Audit Logger]
+        IssueToken --> AuditLogger
+        AuditLogger --> SessionStore
+    end
+
+    subgraph Management Interfaces
+        SessionStore --> CLI[secure-auth CLI Management Tool]
+        SessionStore --> REST[FastAPI REST API]
     end
 ```
 
 ---
 
-## Directory Structure
+## Verified Features & Capabilities
 
+- **Argon2id Password Hashing (RFC 9106)**:
+  - Configured with memory hardness ($64\text{ MB}$ / $65536\text{ KiB}$), time cost ($t=3$ passes), and parallelism ($p=4$ threads) to defeat GPU/ASIC offline cracking.
+- **Timing Side-Channel Immunity**:
+  - Eliminates user enumeration by performing constant-time string comparisons (`secrets.compare_digest`).
+  - Computes a synthetic dummy Argon2id hash whenever a queried username does not exist, guaranteeing statistically indistinguishable response latencies for existing and non-existing accounts.
+- **RFC 6238 TOTP Multi-Factor Authentication**:
+  - Standard time-based one-time passwords with $\pm 30\text{s}$ clock-drift tolerance.
+  - Secure generation and validation of single-use emergency backup recovery codes.
+- **Progressive Account Lockouts**:
+  - Enforces exponential lockout backoff delays upon repeated failed attempts, preventing high-speed credential stuffing without causing permanent account lockout denial-of-service.
+- **CSPRNG Ephemeral Session Tokens**:
+  - Generates 256-bit cryptographically secure pseudorandom session tokens.
+  - Stores session tokens strictly as SHA-256 hashes at rest in the database, protecting active user sessions in the event of database snapshot disclosure.
+- **Hardened HTTP Headers & Rate Limiting**:
+  - IP-based token-bucket rate limiting (15 attempts/minute).
+  - Strict security response headers (`Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`).
+- **Comprehensive Operator CLI**:
+  - `secure-auth` CLI with subcommands for user administration, account unlocking, database initialization, and audit trail inspection.
+
+---
+
+## Technology Stack
+
+- **Core & CLI**: Python 3.12+, Typer, Rich, Pydantic v2
+- **REST API**: FastAPI, Uvicorn, Starlette
+- **Data Persistence**: SQLModel, SQLAlchemy, SQLite (WAL mode)
+- **Cryptography**: Argon2-cffi, Cryptography, PyOTP, Secrets
+- **Quality & Assurance**: Pytest, Pytest-Asyncio, Ruff, Mypy (strict typing)
+- **Containerization**: Rootless multi-stage Docker (`UID 10001`)
+
+---
+
+## CLI Reference & Operational Usage
+
+The platform provides the `secure-auth` administration CLI:
+
+```bash
+# 1. Display active cryptographic parameters and security settings
+secure-auth version
+
+# 2. Initialize database schema and tables
+secure-auth db init
+
+# 3. Provision a new user account with Argon2id password hash
+secure-auth user create --username "alice_admin" --email "alice@corp.example"
+
+# 4. List registered user accounts and security lock statuses
+secure-auth user list
+
+# 5. Manually unlock an account and reset failed login counters
+secure-auth user unlock "alice_admin"
+
+# 6. Display immutable security audit log trail
+secure-auth audit list --limit 30
+
+# 7. Launch production-hardened REST API service
+secure-auth serve --host 127.0.0.1 --port 8000
 ```
-secure-authentication-service/
-├── src/
-│   └── secure_auth/
-│       ├── api/             # FastAPI routers, schemas, dependencies, and middlewares
-│       │   ├── routes/      # Endpoints (/auth, /mfa, /users)
-│       │   ├── app.py       # Application factory & exception handlers
-│       │   ├── dependencies.py # Session & auth dependency injectors
-│       │   ├── middleware.py# Rate limiting & security response headers
-│       │   └── schemas.py   # Strict Pydantic request/response models
-│       ├── cli/             # Typer & Rich operational command-line interface
-│       ├── config/          # Central settings (Argon2id, lockout, session params)
-│       ├── core/            # Cryptographic core (Argon2id, TOTP, CSPRNG tokens)
-│       ├── models/          # SQLModel entities (User, Session, RecoveryCode, Audit)
-│       ├── services/        # Orchestration layer (Auth, MFA, Lockout, Audit)
-│       └── storage/         # Database engine, connection pooling, and repositories
-├── tests/
-│   ├── unit/                # Unit tests for crypto, repositories, and services
-│   ├── integration/         # REST API and CLI integration tests
-│   └── security/            # Timing side-channel statistical verification
-├── docs/
-│   ├── architecture.md      # Detailed system design
-│   ├── threat_model.md      # STRIDE threat model
-│   ├── timing_attack_defense.md # Side-channel timing defense analysis
-│   └── security_review.md   # Comprehensive defensive security audit
-├── pyproject.toml           # Package configuration & tooling definitions
-└── Dockerfile               # Production container image (non-root)
+
+---
+
+## REST API Control Plane
+
+Start the FastAPI daemon directly or via CLI:
+
+```bash
+uvicorn secure_auth.api.app:app --host 127.0.0.1 --port 8000
 ```
+
+Interactive OpenAPI specifications are available at `http://127.0.0.1:8000/docs`.
+
+### Primary Endpoints
+
+| Method | Endpoint | Description |
+|:-------|:---------|:------------|
+| `GET` | `/health` | Health status and database connectivity check |
+| `POST` | `/api/v1/auth/register` | Register a new user account with Argon2id hash |
+| `POST` | `/api/v1/auth/login` | Authenticate with credentials (timing-invariant) |
+| `POST` | `/api/v1/auth/logout` | Revoke active session token |
+| `POST` | `/api/v1/mfa/setup` | Generate TOTP secret and QR code for authenticator apps |
+| `POST` | `/api/v1/mfa/verify` | Verify TOTP code and activate MFA for account |
+| `POST` | `/api/v1/mfa/backup-codes` | Generate single-use emergency recovery codes |
+| `GET` | `/api/v1/users/me` | Retrieve authenticated user profile and security posture |
 
 ---
 
 ## Installation & Setup
 
-### Requirements
-- Python 3.12+
-- `pip` and `virtualenv`
-
-### Quick Start
 ```bash
-# Clone repository
+# Clone the repository
 git clone https://github.com/Krish9800/secure-authentication-service.git
 cd secure-authentication-service
 
-# Create and activate virtual environment
+# Create virtual environment
 python3 -m venv .venv
 source .venv/bin/activate
 
-# Install package and development tools
+# Install dependencies in editable mode
+pip install --upgrade pip
 pip install -e ".[dev]"
-
-# Initialize database schema
-secure-auth db init
 ```
-
----
-
-## Administrative CLI Usage
-
-The service ships with a Rich-powered operational CLI `secure-auth`:
-
-```bash
-# View active security and cryptographic parameters
-secure-auth version
-
-# Launch REST API server
-secure-auth serve --host 127.0.0.1 --port 8000
-
-# Create a new user account (secure interactive password prompt)
-secure-auth user create --username admin --email admin@example.com
-
-# List registered accounts and security posture
-secure-auth user list
-
-# Unlock an account locked out due to failed attempts
-secure-auth user unlock admin
-
-# Display immutable security audit trail
-secure-auth audit list --limit 25
-```
-
----
-
-## REST API Specification
-
-### Authentication Routes (`/api/v1/auth`)
-
-| Method | Endpoint | Description | Auth Required | Status Code |
-| :--- | :--- | :--- | :--- | :--- |
-| `POST` | `/api/v1/auth/register` | Register new account with Argon2id hash | None | `201 Created` |
-| `POST` | `/api/v1/auth/login` | Authenticate credentials (returns session or challenge) | None | `200 OK` / `423 Locked` |
-| `POST` | `/api/v1/auth/mfa/verify`| Complete MFA challenge to obtain full session | None | `200 OK` |
-| `POST` | `/api/v1/auth/logout` | Revoke active bearer session token | Bearer Token | `200 OK` |
-| `POST` | `/api/v1/auth/logout-all`| Revoke all active sessions across all devices | Bearer Token | `200 OK` |
-
-### Multi-Factor Authentication Routes (`/api/v1/mfa`)
-
-| Method | Endpoint | Description | Auth Required | Status Code |
-| :--- | :--- | :--- | :--- | :--- |
-| `POST` | `/api/v1/mfa/setup` | Generate TOTP secret and 10 emergency backup codes | Bearer Token | `200 OK` |
-| `POST` | `/api/v1/mfa/confirm` | Confirm and permanently enable 2FA with live TOTP code | Bearer Token | `200 OK` |
-| `POST` | `/api/v1/mfa/disable` | Safely disable 2FA after code verification | Bearer Token | `200 OK` |
-
-### User Profile & Audit Routes (`/api/v1/users`)
-
-| Method | Endpoint | Description | Auth Required | Status Code |
-| :--- | :--- | :--- | :--- | :--- |
-| `GET` | `/api/v1/users/me` | Fetch authenticated user profile | Bearer Token | `200 OK` |
-| `GET` | `/api/v1/users/me/audit` | Fetch personal security audit history | Bearer Token | `200 OK` |
-
----
-
-## Defensive Security Controls
-
-### 1. Timing Side-Channel Defense
-A classic vulnerability in web authentication is **user enumeration via response latency**. Because verifying an existing user's password takes $\approx 50\text{ms}$ of Argon2id hashing, missing users in naive implementations return in $< 1\text{ms}$, allowing attackers to map valid usernames.
-
-`secure-authentication-service` eliminates this discrepancy:
-- When a user is not found, `hasher.verify_dummy()` executes a full synthetic Argon2id verification cycle against an anchor hash.
-- Latency between existing users with bad passwords and non-existent users is statistically indistinguishable ($1.0\times$ ratio).
-- See detailed documentation in [docs/timing_attack_defense.md](docs/timing_attack_defense.md).
-
-### 2. Progressive Lockout & Brute-Force Defense
-- **Failure Threshold:** 5 consecutive failed login attempts.
-- **Progressive Delay:** Base penalty of 300 seconds (5 minutes) scaling exponentially ($2^{\text{excess}}$) up to 24 hours.
-- **Response:** Responds with HTTP `423 Locked` and RFC-standard `Retry-After` header.
-
-### 3. Session Security
-- Raw session tokens are **never** stored in the database.
-- Database records only store `SHA-256(raw_token)`. Even if an attacker obtains a database snapshot, no active sessions can be hijacked.
 
 ---
 
 ## Testing & Quality Assurance
 
-The codebase maintains strict quality thresholds:
-- **Coverage:** $\ge 93\%$ statement coverage
-- **Linting:** Ruff (PEP 8, Bugbear, Flake8-Security) with 0 errors
-- **Type Safety:** Mypy strict mode with 0 errors
-- **SAST:** Bandit security audit with 0 vulnerabilities
+Run the test suite:
 
 ```bash
-# Run full test suite with coverage
-pytest --cov=secure_auth tests/
+# Run pytest test suite
+pytest
 
-# Run Ruff linter and formatter
+# Run tests with code coverage metrics
+pytest --cov=secure_auth --cov-report=term-missing
+
+# Run code style and lint checks
 ruff check .
 ruff format --check .
 
-# Run Mypy strict type checker
-mypy src/ tests/
-
-# Run Bandit security scanner
-bandit -r src/ -c pyproject.toml
+# Run static type verification
+mypy src/secure_auth
 ```
 
 ---
 
-## Docker Deployment
+## Security Model & Threat Boundaries
 
-A lightweight, non-root Dockerfile is included:
+Documented in `docs/threat_model.md`:
 
-```bash
-# Build Docker image
-docker build -t secure-auth:latest .
-
-# Run container as non-root user (port 8000)
-docker run -d -p 8000:8000 --name secure-auth-app secure-auth:latest
-
-# Check service health
-curl http://localhost:8000/health
-```
+- **Timing Invariance**: Neutralizes user enumeration and timing side-channels via constant-time digest equality and synthetic dummy Argon2id hash calculations for missing users.
+- **Token Protection at Rest**: Session tokens are hashed with SHA-256 before storage in SQLite, neutralizing offline token replay if database records are leaked.
+- **Least Privilege Runtime**: Docker images execute as unprivileged user `UID 10001` with drop-capabilities (`cap_drop: ALL`).
 
 ---
 
-## Responsible Security Disclosure
+## Limitations & Known Issues
 
-This project is created for educational and defensive cybersecurity purposes. If you discover a vulnerability in this project or have suggestions for enhancing cryptographic robustness, please review our [SECURITY.md](SECURITY.md) guidelines.
+- **In-Memory Rate Limiting**: The built-in token-bucket rate limiter tracks client IPs in memory. In multi-instance deployments behind load balancers, an external distributed cache (e.g. Redis) is required.
+- **Session Revocation Broadcast**: Single-node architecture invalidates sessions directly in the local database.
+
+---
+
+## License & Responsible Use
+
+Distributed under the **MIT License** - see [LICENSE](https://opensource.org/licenses/MIT).
+
+> [!NOTE]
+> Designed as an educational reference architecture and defensive engineering project for secure authentication and timing attack mitigation.
